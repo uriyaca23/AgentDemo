@@ -1,0 +1,131 @@
+# LLM Chatbot UI — Implementation Plan
+
+## Goal
+Build a production-quality chat interface (like ChatGPT/Gemini) that works with **both** OpenRouter (external) and self-hosted LLM (internal on OpenShift). Supports model switching, conversation history, image uploads, thinking modes, and full model metadata.
+
+> [!WARNING]
+> **Air-gapped deployment**: The org has **no internet**. A global **Internet On/Off toggle** controls whether outbound WWW traffic is allowed. 
+> - **Backend Enforcement**: When OFF, external web search and tool calls are blocked at the router layer. 
+> - **LLM Enforcement**: The models themselves are explicitly prompted (via system prompts) and restricted (via tool payloads) from attempting to access the internet. This prevents the model from hallucinating internet access or trying and failing.
+> - **Testing Mode via OpenRouter**: When testing locally before organizational deployment, the OpenRouter API will still be accessible even when the toggle is "Offline", *but* the models will have their web-search capabilities explicitly disabled to emulate the offline organizational environment.
+
+---
+
+## Internal LLM: Model Selection
+
+> [!IMPORTANT]
+> **Qwen2.5-VL-72B-Instruct (AWQ 4-bit)** is the recommended model for 3× A100-80GB (240 GB total VRAM).
+
+| Criteria | Details |
+|---|---|
+| **Model** | `Qwen/Qwen2.5-VL-72B-Instruct-AWQ` |
+| **Architecture** | 72B dense, AWQ 4-bit quantized |
+| **Multimodal** | ✅ Vision + Text (images, documents) |
+| **Thinking/Reasoning** | ✅ Chain-of-thought prompting supported |
+| **VRAM (AWQ)** | ~40 GB per GPU → fits on 3× A100-80GB with large KV-cache headroom |
+| **Context** | 32,768 tokens (extendable to 128K via YaRN) |
+| **Serving** | vLLM with `tensor-parallel=3` |
+
+**Why not larger?** Qwen3-VL-235B needs 8× GPUs. LLaMA 4 Maverick needs H100-class. Qwen2.5-VL-72B-AWQ is the sweet spot for quality on this hardware.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | Next.js 15 (App Router) + CSS Modules |
+| **Backend** | Python FastAPI |
+| **Database** | SQLite (local dev), PostgreSQL-ready |
+| **Internal LLM** | vLLM in Docker, OpenAI-compatible API |
+| **External LLM** | OpenRouter API |
+| **Skills/MCP** | Future extensible architecture. Skills (code/tools) will be stored on your local machine (or a local secure storage), physically separated from the LLM itself. The FastAPI backend orchestrates this: it sends the system prompt describing available skills to the LLM (internal or OpenRouter), receives the LLM's requested tool calls, executes the local skills code on your machine securely, and returns the result to the LLM. |
+
+---
+
+## Proposed Changes
+
+### Frontend — Next.js App
+
+#### [NEW] [layout.tsx](file:///c:/Users/uriya/PycharmProjects/AgentDemo/frontend/src/app/layout.tsx)
+- Root layout with sidebar + main chat area, dark theme, Google Fonts (Inter)
+
+#### [NEW] [page.tsx](file:///c:/Users/uriya/PycharmProjects/AgentDemo/frontend/src/app/page.tsx)
+- Main chat page with message list, input bar, image upload
+
+#### [NEW] Key Components
+- `Sidebar.tsx` — Conversation history list, new chat button, search
+- `ChatArea.tsx` — Message bubbles, markdown rendering, code highlighting, streaming
+- `ModelSelector.tsx` — Dropdown with price/speed/intelligence/context metadata.
+- `ModeSelector.tsx` — Toggle: Auto, Fast, Thinking, Pro
+- `MessageInput.tsx` — Text input + image attachment + send button. **Includes `@` / `/` slash command UI** for triggering optional Skills/MCP connections (built-in UI optionality, mirroring Google Gemini's tool triggers, ready for future skill integrations).
+- `ImagePreview.tsx` — Thumbnail preview for uploaded images
+- `NetworkToggle.tsx` — Internet On/Off switch in settings area; visually indicates whether the LLM has web search enabled or is restricted to the air-gapped emulation.
+
+---
+
+### Backend — FastAPI
+
+#### [NEW] [main.py](file:///c:/Users/uriya/PycharmProjects/AgentDemo/backend/main.py)
+- FastAPI app with CORS, routes
+
+#### [NEW] Key Modules
+- `routers/chat.py` — POST `/chat` (streaming SSE), GET `/conversations`
+- `routers/models.py` — GET `/models` (list all available models + metadata)
+- `routers/settings.py` — GET/PUT `/settings/network-mode` (internet on/off)
+- `services/llm_router.py` — Unified interface. **Skill-aware**: injects system prompt to inform the requested model whether it has internet/search access and lists any available skills (even if currently empty). When the network toggle is OFF, explicitly removes web-search tools from the payload.
+- `services/openrouter.py` — OpenRouter API client (reads `api_key.txt`)
+- `services/internal_llm.py` — Internal vLLM OpenAI-compatible client
+- `services/history.py` — SQLite conversation CRUD
+- `models/` — Pydantic schemas
+
+---
+
+### Infrastructure — Docker / OpenShift
+
+#### [NEW] [Dockerfile](file:///c:/Users/uriya/PycharmProjects/AgentDemo/docker/Dockerfile)
+- Based on `vllm/vllm-openai:latest`
+- Pre-downloads Qwen2.5-VL-72B-Instruct-AWQ weights
+- Exposes port 8000 (OpenAI-compatible API)
+
+#### [NEW] [docker-compose.yml](file:///c:/Users/uriya/PycharmProjects/AgentDemo/docker/docker-compose.yml)
+- Sets up the internal LLM natively with easy volume mounting for weights and GPU configuration.
+
+#### [NEW] [deployment_guide.md](file:///c:/Users/uriya/PycharmProjects/AgentDemo/docs/deployment_guide.md)
+- Step-by-step guide for deploying inside the organization.
+- Details Docker Compose settings, how to properly mount the local LLM weights/volumes (`-v /path/to/weights:/app/model`), configure environment variables, and ensure hardware passes through correctly (e.g., `deploy.resources.reservations.devices`).
+
+#### [NEW] [deployment.yaml](file:///c:/Users/uriya/PycharmProjects/AgentDemo/docker/openshift-deployment.yaml)
+- OpenShift DeploymentConfig with 3× A100 GPU resource requests
+- Service + Route for internal cluster access
+
+---
+
+## Key Features Checklist
+
+- [x] Model switching (OpenRouter + Internal)
+- [x] Model metadata: free/paid, cost/token, speed, intelligence, context length
+- [x] Conversation history (sidebar with past chats)
+- [x] Image upload support
+- [x] Streaming responses (SSE)
+- [x] Mode selector (Auto, Fast, Thinking, Pro)
+- [x] Markdown rendering with code syntax highlighting
+- [x] Dark theme, responsive, premium UI
+- [x] Docker image for internal LLM deployment
+- [x] **Internet On/Off toggle** — strictly strips web tools and enforces offline system prompts.
+- [x] **Skills Optionality UI** — built-in frontend support for future `@` or `/` commands.
+- [x] **Deployment Guide** — documented volume mounting and docker-compose settings.
+
+---
+
+## Verification Plan
+
+1. **Start backend**: `uvicorn main:app --reload --port 8001`
+2. **Start frontend**: `npm run dev` (port 3000)
+3. **Test OpenRouter (Online)**: Send a message requiring the internet, ensure search tool is used (if supported).
+4. **Test OpenRouter (Offline Emulator)**: Toggle internet off, prompt for real-time web info, verify backend blocks tool use and LLM safely replies that it cannot access the internet due to system prompt enforcement.
+5. **Test model switching**: Switch models, verify metadata updates.
+6. **Test image upload**: Attach image, verify it's sent to multimodal model.
+7. **Test history**: Create conversations, refresh, verify persistence.
+8. **Test Deployment Artifacts**: Review `docker-compose.yml` and `deployment_guide.md` to ensure path mounting and GPU allocation is clearly documented.
+9. **Visual UI Test**: Open the UI in the browser and verify it looks correctly formatted, highly aesthetic, and professional (on par with Google Gemini's UI). Verify all buttons, alignments, and fonts look premium and responsive.

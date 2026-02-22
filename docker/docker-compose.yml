@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  internal-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the local model weight directory here
+      # Make sure the host path has the AWQ model downloaded
+      - /path/to/weights/Qwen2.5-VL-72B-Instruct-AWQ:/app/model
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 3
+              capabilities: [gpu]

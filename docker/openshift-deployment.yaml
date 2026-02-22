@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: internal-llm
+  labels:
+    app: internal-llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: internal-llm
+  template:
+    metadata:
+      labels:
+        app: internal-llm
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        command:
+        - "python3"
+        - "-m"
+        - "vllm.entrypoints.openai.api_server"
+        - "--model"
+        - "/app/model"
+        - "--tensor-parallel-size"
+        - "3"
+        - "--quantization"
+        - "awq"
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: model-weights
+          mountPath: /app/model
+        resources:
+          limits:
+            nvidia.com/gpu: "3"
+      volumes:
+      - name: model-weights
+        hostPath:
+          path: /data/models/Qwen2.5-VL-72B-Instruct-AWQ
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-llm-service
+spec:
+  selector:
+    app: internal-llm
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

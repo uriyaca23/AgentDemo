@@ -1,0 +1,14 @@
+I want to start this project by first, detailing the purpose of this project. This project is aimed at enabling my organization to integrate a chatbot with our code, databases, and workflows in order to automate and make life for people in our organization easier and more convenient.
+
+To being this project, we will start with the first task- initializing an LLM text UI. While working on this project, I am working on it outside of my organization and as such need to emulate our internal LLM using an outside model which we will access and work with through the openrouter API which enables us to use and try out many different models.
+
+The api key for the openrouter is accessible through the file api_key.txt and you should use it as your main LLM for everything (except for the coding and working on the project part of this project, which I will do directly through the anti gravity IDE)
+
+Also, please write code for accessing an internal LLM (I have access to 3 A100-80GB gpus at my workplace) do this by building and creating a docker image that contains the model as well as some kind of router port to it, such that I can simply mount it on to my deployment pod at work on our openshift. While doing the work on this project we will not actually be using it because it can only be used inside my organization but you have to make sure that everything we do here is completely compliant and enabled on both methods (both the openrouter and localized LLM deployment methods)
+
+Make sure that the UI is high quality, contains past conversations, abillity to add images, text, full of context and history ect.. same as a real high quality UI interface used by chatGPT or gemini.
+
+Make it possible to toggle between all of the difference models available (either through the openrouter API or the deployment localized LLM) and also make sure to specify which one is free\cost per token as well as estimated speed per token as well as intelligence level, context length, as such making it easier for me to understand what are the capabillities of the model I'm using
+
+similiar to gemini\chatGPT interface, I also want to be able to select between different modes of the model such as thinking, fast, auto, pro, ect...
+It is very important that you do this well and don't make me have to go and manually fix\add things that you missed. you know what is available today under LLM UIs on the internet, make sure on your own that you contain anything that is neccecary
