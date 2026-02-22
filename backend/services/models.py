@@ -1,8 +1,4 @@
-from fastapi import APIRouter
 import httpx
-from models.schemas import ModelMetadata
-
-router = APIRouter(prefix="/models", tags=["models"])
 
 MOCK_FALLBACK = [
     {
@@ -13,7 +9,7 @@ MOCK_FALLBACK = [
         "cost_per_m": 0.35,
         "context_length": 32768,
         "intelligence": 9,
-        "speed": 8
+        "speed": 8,
     },
     {
         "id": "openai/gpt-4o",
@@ -23,7 +19,7 @@ MOCK_FALLBACK = [
         "cost_per_m": 5.0,
         "context_length": 128000,
         "intelligence": 10,
-        "speed": 8
+        "speed": 8,
     },
     {
         "id": "anthropic/claude-3.5-sonnet",
@@ -33,17 +29,12 @@ MOCK_FALLBACK = [
         "cost_per_m": 3.0,
         "context_length": 200000,
         "intelligence": 10,
-        "speed": 6
-    }
+        "speed": 6,
+    },
 ]
 
-cached_models = []
-
-@router.get("")
-async def list_models():
-    global cached_models
-    
-    internal_models = [{
+INTERNAL_MODELS = [
+    {
         "id": "qwen2.5-vl-72b-instruct",
         "name": "Qwen 2.5 VL 72B",
         "provider": "internal",
@@ -51,33 +42,49 @@ async def list_models():
         "cost_per_m": 0.0,
         "context_length": 32768,
         "intelligence": 9,
-        "speed": 7
-    }]
+        "speed": 7,
+    }
+]
+
+_cached_models: list[dict] = []
+
+
+async def fetch_models() -> list[dict]:
+    """Fetch all available models (internal + OpenRouter). Returns list of dicts."""
+    global _cached_models
 
     openrouter_models = []
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get("https://openrouter.ai/api/v1/models", timeout=8.0)
+            resp = await client.get(
+                "https://openrouter.ai/api/v1/models", timeout=8.0
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 for m in data.get("data", []):
-                    openrouter_models.append({
-                        "id": m["id"],
-                        "name": m.get("name") or m["id"],
-                        "provider": "openrouter",
-                        "description": m.get("description", "Dynamic OpenRouter Model"),
-                        "cost_per_m": float(m.get("pricing", {}).get("prompt", 0) or 0) * 1000000,
-                        "context_length": m.get("context_length", 8192),
-                        "intelligence": 8,
-                        "speed": 8
-                    })
-                # Sort them alphabetically for better UI
+                    openrouter_models.append(
+                        {
+                            "id": m["id"],
+                            "name": m.get("name") or m["id"],
+                            "provider": "openrouter",
+                            "description": m.get(
+                                "description", "Dynamic OpenRouter Model"
+                            ),
+                            "cost_per_m": float(
+                                m.get("pricing", {}).get("prompt", 0) or 0
+                            )
+                            * 1_000_000,
+                            "context_length": m.get("context_length", 8192),
+                            "intelligence": 8,
+                            "speed": 8,
+                        }
+                    )
                 openrouter_models.sort(key=lambda x: x["name"])
-                cached_models = openrouter_models
+                _cached_models = openrouter_models
     except Exception as e:
-        print(f"Failed to fetch models: {e}")
+        print(f"Failed to fetch models from OpenRouter: {e}")
 
     if not openrouter_models:
-        openrouter_models = cached_models if cached_models else MOCK_FALLBACK
+        openrouter_models = _cached_models if _cached_models else MOCK_FALLBACK
 
-    return internal_models + openrouter_models
+    return INTERNAL_MODELS + openrouter_models

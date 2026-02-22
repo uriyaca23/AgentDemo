@@ -32,7 +32,6 @@ out/
 .env
 .env.local
 .env.*.local
-api_key.txt
 
 # OS
 .DS_Store
