@@ -49,68 +49,15 @@ function preprocessLaTeX(content: string): string {
         return `$${math.trim()}$`;
     });
 
-    // Step 4: Convert \begin{equation}...\end{equation} → $$...$$
+    // Step 4: Convert \begin{environment}...\end{environment} → $$...$$
     result = result.replace(
         /\\begin\{(equation|align|align\*|gather|gather\*|multline|multline\*)\}([\s\S]*?)\\end\{\1\}/g,
         (_, env, math) => `\n$$\n\\begin{${env}}${math}\\end{${env}}\n$$\n`
     );
 
-    // Step 5: Detect lines that are purely LaTeX commands (not inside $ already)
-    // This catches lines like: \int_{-\infty}^{+\infty} e^{-2x^2} dx = \sqrt{\frac{\pi}{a}}
-    // Pattern: line starts with a common LaTeX command and isn't already wrapped
-    const latexCommands = [
-        '\\int', '\\sum', '\\prod', '\\lim', '\\frac', '\\sqrt',
-        '\\alpha', '\\beta', '\\gamma', '\\delta', '\\epsilon',
-        '\\theta', '\\lambda', '\\mu', '\\sigma', '\\omega', '\\pi',
-        '\\infty', '\\partial', '\\nabla', '\\forall', '\\exists',
-        '\\mathbb', '\\mathcal', '\\mathbf', '\\mathrm', '\\text',
-        '\\left', '\\right', '\\Big', '\\big', '\\cdot', '\\times',
-        '\\leq', '\\geq', '\\neq', '\\approx', '\\equiv',
-        '\\in', '\\subset', '\\cup', '\\cap', '\\vec',
-        '\\hat', '\\bar', '\\dot', '\\ddot', '\\tilde',
-    ];
-
-    // Build a set for O(1) lookup of the command prefixes
-    const cmdRegex = latexCommands.map(c => c.replace(/\\/g, '\\\\')).join('|');
-
-    // Process line by line to catch standalone LaTeX expressions
-    const lines = result.split('\n');
-    const processedLines = lines.map(line => {
-        const trimmed = line.trim();
-
-        // Skip empty lines, lines already containing $, lines that are code placeholders
-        if (!trimmed || trimmed.includes('$') || trimmed.startsWith('%%CODEBLOCK')) {
-            return line;
-        }
-
-        // If the line is predominantly a LaTeX expression (starts with a command or
-        // contains multiple LaTeX commands), wrap it as display math
-        const commandMatches = trimmed.match(new RegExp(`(${cmdRegex})`, 'g'));
-        if (commandMatches && commandMatches.length >= 2 && !trimmed.startsWith('#') && !trimmed.startsWith('-') && !trimmed.startsWith('*')) {
-            // Line has 2+ LaTeX commands and isn't a markdown heading/list → display math
-            return `$$${trimmed}$$`;
-        }
-
-        // For inline occurrences within mixed text lines, wrap individual LaTeX
-        // expressions that aren't already in dollar signs
-        // Match sequences like \frac{...}{...} or \int_{...}^{...} etc.
-        if (commandMatches && commandMatches.length >= 1) {
-            // Replace standalone LaTeX command sequences within the line with inline math
-            const inlineResult = line.replace(
-                new RegExp(`((?:${cmdRegex})(?:[_^]\\{[^}]*\\}|[_^]\\w|\\{[^}]*\\}|\\([^)]*\\)|[\\w\\s+\\-=*/.,])*(?:\\{[^}]*\\})*)`, 'g'),
-                (match) => {
-                    // Don't double-wrap if already inside $ or if it's trivially short
-                    if (match.length < 3) return match;
-                    return `$${match}$`;
-                }
-            );
-            return inlineResult;
-        }
-
-        return line;
-    });
-
-    result = processedLines.join('\n');
+    // We removed the aggressive Step 5 (heuristic whole-line replacement) 
+    // because it falsely matched normal text or inline code variables,
+    // resulting in them rendering as raw red code blocks.
 
     // Step 6: Clean up any double-dollar artifacts like $$$$ → $$
     result = result.replace(/\${3,}/g, '$$');

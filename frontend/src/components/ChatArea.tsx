@@ -115,6 +115,9 @@ export default function ChatArea() {
 
                         try {
                             const parsed = JSON.parse(data);
+                            if (parsed.error) {
+                                throw new Error(parsed.error);
+                            }
                             if (parsed.choices && parsed.choices.length > 0) {
                                 const choice = parsed.choices[0];
                                 // Handle reasoning_content for thinking models (e.g. DeepSeek R1)
@@ -166,6 +169,7 @@ export default function ChatArea() {
             });
         } finally {
             setIsStreaming(false);
+            triggerHistoryRefresh();
         }
     };
 
@@ -218,7 +222,7 @@ export default function ChatArea() {
     }
 
     return (
-        <div className="flex flex-col h-full w-full relative bg-gradient-to-br from-[#0b0c0f] to-[#12141a]">
+        <div className="flex flex-col h-full w-full relative bg-gradient-to-br from-[#0b0c0f] to-[#12141a] overflow-hidden">
 
             {/* Top Header / Model Selector Area */}
             <header className="h-[60px] w-full border-b border-white/5 flex items-center px-6 justify-between bg-black/10 backdrop-blur-sm z-20 shrink-0">
@@ -231,7 +235,7 @@ export default function ChatArea() {
             </header>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 custom-scrollbar scroll-smooth">
+            <div className="flex-1 overflow-y-auto min-h-0 px-6 py-8 space-y-8 custom-scrollbar scroll-smooth">
                 {messages.length === 0 ? (
                     /* Empty State / Welcome */
                     <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-4">

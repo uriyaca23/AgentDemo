@@ -39,6 +39,9 @@ async def generate_chat_openrouter(request: ChatRequest, offline_mode: bool, con
     elif request.mode == "thinking":
         payload["temperature"] = 0.2
         system_instruction = {"role": "system", "content": "You are in THINKING mode. Before answering, wrap your step-by-step reasoning inside <think>...</think> XML tags. After the closing </think> tag, provide your clear final answer. Always include your reasoning inside the think tags."}
+    elif request.mode == "auto":
+        payload["temperature"] = 0.5
+        system_instruction = {"role": "system", "content": "You are in AUTO mode. First, analyze the user's prompt. If it requires complex math, deep reasoning, logic puzzles, or non-trivial coding, you MUST place your step-by-step logical reasoning inside <think>...</think> XML tags before providing the final answer. If it is a simple factual or conversational question, answer directly without thinking tags."}
     elif request.mode == "pro":
         payload["temperature"] = 0.5
         system_instruction = {"role": "system", "content": "You are in PRO mode. Provide an expert, nuanced, and highly detailed professional response."}

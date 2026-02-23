@@ -26,3 +26,11 @@ def update_conversation(db: Session, conversation_id: str, messages: list):
         db.commit()
         db.refresh(db_conv)
     return db_conv
+
+def update_conversation_title(db: Session, conversation_id: str, title: str):
+    db_conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if db_conv:
+        db_conv.title = title
+        db.commit()
+        db.refresh(db_conv)
+    return db_conv
