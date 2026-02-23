@@ -1,142 +1,121 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { ChevronDown, Cpu, Sparkles, GlobeOff, Search } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppState, ModelOption } from "@/lib/AppStateContext";
+import React, { useState, useRef, useEffect } from 'react';
+import { ChevronDown, Search, Database, Coins } from 'lucide-react';
 
-export default function ModelSelector() {
-    const { isOffline, selectedModel, setSelectedModel } = useAppState();
+interface ModelInfo {
+    id: string;
+    name: string;
+    provider: string;
+    context_length?: number;
+    pricing?: {
+        prompt: string | number;
+        completion: string | number;
+    };
+}
+
+interface ModelSelectorProps {
+    models: ModelInfo[];
+    selectedId: string;
+    onSelect: (id: string) => void;
+}
+
+export default function ModelSelector({ models, selectedId, onSelect }: ModelSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
-    const [models, setModels] = useState<ModelOption[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState("");
+    const [search, setSearch] = useState("");
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const selectedModel = models.find(m => m.id === selectedId) || models[0];
 
     useEffect(() => {
-        async function fetchModels() {
-            try {
-                // Fetch dynamic models from backend
-                const res = await fetch("http://localhost:8001/models");
-                if (res.ok) {
-                    const data = await res.json();
-                    setModels(data);
-                    // Select a default model if not explicitly set
-                    if (!selectedModel && data.length > 0) {
-                        setSelectedModel(data[0]);
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to fetch models", err);
-                // Fallback models in case backend is completely down
-                const fallbacks: ModelOption[] = [
-                    { id: "qwen2.5-vl-72b-instruct", name: "Qwen2.5-VL-72B", provider: "internal", description: "Local model", cost_per_m: 0, context_length: 32000, intelligence: 9, speed: 7 },
-                    { id: "gpt-4o", name: "GPT-4o", provider: "openrouter", description: "Cloud model", cost_per_m: 5.0, context_length: 128000, intelligence: 10, speed: 8 },
-                ];
-                setModels(fallbacks);
-                if (!selectedModel) setSelectedModel(fallbacks[0]);
-            } finally {
-                setIsLoading(false);
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setIsOpen(false);
             }
-        }
-        fetchModels();
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const filteredModels = useMemo(() => {
-        if (!searchQuery.trim()) return models;
-        const lowerQuery = searchQuery.toLowerCase();
-        return models.filter(m =>
-            m.name.toLowerCase().includes(lowerQuery) ||
-            m.id.toLowerCase().includes(lowerQuery) ||
-            m.provider.toLowerCase().includes(lowerQuery)
-        );
-    }, [models, searchQuery]);
-
-    if (!selectedModel) return (
-        <div className="h-9 px-3 bg-black/20 animate-pulse rounded-lg w-40 border border-white/5"></div>
+    const filtered = models.filter(m =>
+        m.name.toLowerCase().includes(search.toLowerCase()) ||
+        m.id.toLowerCase().includes(search.toLowerCase())
     );
 
-    const Icon = selectedModel.provider === 'internal' ? Cpu : Sparkles;
+    const formatPrice = (p: string | number | undefined) => {
+        if (p === undefined || p === null) return "Unknown";
+        const num = typeof p === 'string' ? parseFloat(p) : p;
+        if (num === 0) return "Free";
+        return `$${(num * 1000000).toFixed(2)}/M`;
+    };
+
+    const formatContext = (c: number | undefined) => {
+        if (!c) return "Unknown";
+        return c >= 1000 ? `${(c / 1000).toFixed(0)}k` : c.toString();
+    };
 
     return (
-        <div className="relative">
+        <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="h-9 px-3 bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-lg text-sm font-medium text-foreground flex items-center transition-all border border-white/10 shadow-sm"
+                className="flex items-center justify-between w-64 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:border-indigo-500/50 hover:bg-black/60 transition-colors text-white"
+                data-testid="model-selector-button"
             >
-                <Icon size={16} className={cn("mr-2", selectedModel.provider === 'internal' ? 'text-primary' : 'text-purple-400')} />
-                {selectedModel.name}
-                <span className={cn(
-                    "ml-2 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded",
-                    selectedModel.provider === 'internal' ? "bg-primary/20 text-primary-foreground" : "bg-purple-500/20 text-purple-300"
-                )}>
-                    {selectedModel.provider}
-                </span>
-                <ChevronDown size={14} className={cn("ml-2 opacity-50 transition-transform", isOpen && "rotate-180")} />
+                <div className="truncate text-left flex-1" data-testid="selected-model-name">
+                    {selectedModel ? selectedModel.name : "Loading models..."}
+                </div>
+                <ChevronDown size={14} className={`ml-2 text-white/50 transition-transform ${isOpen ? "rotate-180" : ""}`} />
             </button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 mt-2 w-[340px] bg-[#1e293b]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-
-                    <div className="px-3 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-black/30 flex items-center justify-between border-b border-white/5">
-                        <span>Available Models</span>
-                        {isOffline && <span className="text-red-400 flex items-center gap-1"><GlobeOff size={12} /> Offline</span>}
-                    </div>
-
-                    <div className="p-2 border-b border-white/5 bg-black/20">
+                <div className="absolute top-full left-0 mt-2 w-80 bg-[#1a1d24] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[400px]">
+                    <div className="p-2 border-b border-white/5 bg-black/20 shrink-0">
                         <div className="relative">
-                            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                             <input
                                 type="text"
                                 placeholder="Search models..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full bg-black/20 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground transition-all"
-                                autoFocus
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                className="w-full bg-black/40 border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500/50 text-white placeholder:text-white/30"
+                                data-testid="model-search-input"
                             />
                         </div>
                     </div>
 
-                    <div className="p-1 flex flex-col max-h-[350px] overflow-y-auto custom-scrollbar pr-1">
-                        {filteredModels.length === 0 ? (
-                            <div className="p-4 flex flex-col items-center justify-center text-center text-muted-foreground space-y-2">
-                                <Search size={24} className="opacity-20" />
-                                <p className="text-sm">No models found</p>
-                            </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-1">
+                        {filtered.length === 0 ? (
+                            <div className="p-4 text-center text-sm text-white/40">No models found</div>
                         ) : (
-                            filteredModels.map((model) => {
-                                const disabled = isOffline && model.provider !== 'internal';
-                                const MIcon = model.provider === 'internal' ? Cpu : Sparkles;
-                                const isSelected = selectedModel.id === model.id && selectedModel.provider === model.provider;
+                            filtered.map(m => (
+                                <button
+                                    key={m.id}
+                                    onClick={() => {
+                                        onSelect(m.id);
+                                        setIsOpen(false);
+                                        setSearch("");
+                                    }}
+                                    className={`w-full text-left px-3 py-2.5 rounded-lg mb-1 flex flex-col gap-1 transition-colors ${selectedId === m.id ? 'bg-indigo-600/20 border border-indigo-500/30' : 'hover:bg-white/5 border border-transparent'}`}
+                                    data-testid={`model-option-${m.id.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-sm text-white truncate pr-2">{m.name}</span>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider bg-white/10 text-white/60 shrink-0">
+                                            {m.provider}
+                                        </span>
+                                    </div>
 
-                                return (
-                                    <button
-                                        key={`${model.id}-${model.provider}`}
-                                        disabled={disabled}
-                                        onClick={() => { setSelectedModel(model); setIsOpen(false); setSearchQuery(""); }}
-                                        className={cn(
-                                            "flex flex-col px-3 py-2.5 rounded-lg text-left transition-colors mb-0.5",
-                                            disabled
-                                                ? "opacity-40 cursor-not-allowed grayscale"
-                                                : "hover:bg-white/5",
-                                            isSelected && "bg-white/10 border border-white/10 shadow-sm"
-                                        )}
-                                    >
-                                        <div className="flex items-center justify-between w-full">
-                                            <span className="text-sm font-medium flex items-center gap-2 truncate pr-2">
-                                                <MIcon size={14} className={cn("shrink-0", model.provider === 'internal' ? 'text-primary' : 'text-purple-400')} />
-                                                <span className="truncate">{model.name}</span>
-                                            </span>
-                                            <span className="text-xs text-muted-foreground tracking-tight shrink-0">{Math.round(model.context_length / 1000)}K</span>
+                                    <div className="flex items-center gap-3 text-xs text-white/40 mt-1">
+                                        <div className="flex items-center gap-1" title="Context Length">
+                                            <Database size={12} /> {formatContext(m.context_length)}
                                         </div>
-                                        <div className="flex items-center justify-between mt-1.5">
-                                            <span className={cn("text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded", model.provider === 'internal' ? 'bg-primary/20 text-primary-foreground' : 'bg-purple-500/20 text-purple-300')}>
-                                                {model.provider === 'internal' ? 'Local' : 'OpenRouter'}
-                                            </span>
-                                            <span className="text-xs font-semibold text-emerald-400/90">
-                                                {model.cost_per_m === 0 ? 'Free' : `$${(model.cost_per_m).toFixed(2)}/M`}
-                                            </span>
+                                        <div className="flex items-center gap-1" title="Prompt Price">
+                                            <Coins size={12} /> In: {formatPrice(m.pricing?.prompt)}
                                         </div>
-                                    </button>
-                                )
-                            })
+                                        <div className="flex items-center gap-1" title="Completion Price">
+                                            Out: {formatPrice(m.pricing?.completion)}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))
                         )}
                     </div>
                 </div>

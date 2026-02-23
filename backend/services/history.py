@@ -1,36 +1,42 @@
 from sqlalchemy.orm import Session
-from models.db_models import Conversation, Base
-from database import engine
-import uuid
+from models import db_models
+from typing import List, Dict
 
-# Create tables if they don't exist
-Base.metadata.create_all(bind=engine)
+def get_conversations(db: Session, limit: int = 50, offset: int = 0):
+    return db.query(db_models.ConversationDB).order_by(db_models.ConversationDB.created_at.desc()).offset(offset).limit(limit).all()
 
-def get_conversations(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(Conversation).order_by(Conversation.created_at.desc()).offset(skip).limit(limit).all()
+def get_conversation(db: Session, conv_id: str):
+    return db.query(db_models.ConversationDB).filter(db_models.ConversationDB.id == conv_id).first()
 
-def get_conversation(db: Session, conversation_id: str):
-    return db.query(Conversation).filter(Conversation.id == conversation_id).first()
-
-def create_conversation(db: Session, title: str, messages: list):
-    db_conv = Conversation(id=str(uuid.uuid4()), title=title, messages=messages)
+def create_conversation(db: Session, title: str, messages: List[Dict]):
+    db_conv = db_models.ConversationDB(title=title, messages=messages)
     db.add(db_conv)
     db.commit()
     db.refresh(db_conv)
     return db_conv
 
-def update_conversation(db: Session, conversation_id: str, messages: list):
-    db_conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+def update_conversation(db: Session, conv_id: str, messages: List[Dict]):
+    db_conv = db.query(db_models.ConversationDB).filter(db_models.ConversationDB.id == conv_id).first()
     if db_conv:
         db_conv.messages = messages
+        # ORM requires re-assignment for JSON mutation detection
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(db_conv, "messages")
         db.commit()
         db.refresh(db_conv)
     return db_conv
 
-def update_conversation_title(db: Session, conversation_id: str, title: str):
-    db_conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+def update_conversation_title(db: Session, conv_id: str, title: str):
+    db_conv = db.query(db_models.ConversationDB).filter(db_models.ConversationDB.id == conv_id).first()
     if db_conv:
         db_conv.title = title
         db.commit()
-        db.refresh(db_conv)
     return db_conv
+
+def delete_conversation(db: Session, conv_id: str):
+    db_conv = db.query(db_models.ConversationDB).filter(db_models.ConversationDB.id == conv_id).first()
+    if db_conv:
+        db.delete(db_conv)
+        db.commit()
+        return True
+    return False
