@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../backend")))
 
-from services.skills import process_skills, handle_generate_image, _build_pollinations_url, _fallback_ddgs_image
+from services.skills import process_skills, handle_generate_image, _build_pollinations_url
 from models.db_models import ConversationDB
 
 
@@ -119,93 +119,28 @@ async def test_generate_image_retries_on_530(mock_cls, mock_sleep, mock_db):
     assert "![" in text
 
 
-# ── fallback path: Pollinations permanently returns 530 ──────────────────────
+# ── permanent failure path: shows error message ────────────────────────────────
 
 @pytest.mark.asyncio
 @patch("services.skills.asyncio.sleep", new_callable=AsyncMock)
-@patch("services.skills._fallback_ddgs_image")
 @patch("services.skills.httpx.AsyncClient")
-async def test_generate_image_falls_back_to_ddgs_on_permanent_failure(
-    mock_cls, mock_fallback, mock_sleep, mock_db
+async def test_generate_image_shows_error_on_permanent_failure(
+    mock_cls, mock_sleep, mock_db
 ):
-    """When all Pollinations attempts fail, we fall back to DDGS image search."""
+    """When all Pollinations attempts fail, we just show a friendly error without a fallback image."""
     mock_cls.return_value = _MockHTTPXClient([
         _MockResponse(530, b"", "text/plain"),
         _MockResponse(530, b"", "text/plain"),
         _MockResponse(530, b"", "text/plain"),
     ])
-    mock_fallback.return_value = "https://example.com/relevant_image.jpg"
-
-    chunks = [c async for c in handle_generate_image("volcano", mock_db, "test_id")]
-
-    payload = json.loads(chunks[0][6:])
-    text = payload["choices"][0]["delta"]["content"]
-    assert "![Relevant Image](https://example.com/relevant_image.jpg)" in text
-    assert "temporarily unavailable" in text
-
-
-# ── fallback path: DDGS also fails → friendly error message ──────────────────
-
-@pytest.mark.asyncio
-@patch("services.skills.asyncio.sleep", new_callable=AsyncMock)
-@patch("services.skills._fallback_ddgs_image")
-@patch("services.skills.httpx.AsyncClient")
-async def test_generate_image_shows_error_when_both_sources_fail(
-    mock_cls, mock_fallback, mock_sleep, mock_db
-):
-    """When Pollinations fails AND _fallback_ddgs_image returns None, show a friendly message."""
-    mock_cls.return_value = _MockHTTPXClient([
-        _MockResponse(530, b"", "text/plain"),
-        _MockResponse(530, b"", "text/plain"),
-        _MockResponse(530, b"", "text/plain"),
-    ])
-    mock_fallback.return_value = None
 
     chunks = [c async for c in handle_generate_image("abstract art", mock_db, "test_id")]
 
     payload = json.loads(chunks[0][6:])
     text = payload["choices"][0]["delta"]["content"]
     assert "⚠️" in text
-    assert "down" in text.lower() or "unavailable" in text.lower() or "failed" in text.lower()
-    assert "530" not in text
+    assert "failed" in text.lower() or "unavailable" in text.lower()
 
-
-@pytest.mark.asyncio
-@patch("services.skills.asyncio.sleep", new_callable=AsyncMock)
-@patch("services.skills._fallback_ddgs_image")
-@patch("services.skills.httpx.AsyncClient")
-async def test_generate_image_falls_back_to_picsum_url(
-    mock_cls, mock_fallback, mock_sleep, mock_db
-):
-    """Simulate Pollinations 530 AND DDGS rate-limited (the real scenario that triggered this bug).
-    _fallback_ddgs_image returns a Picsum URL so the user still gets an image."""
-    mock_cls.return_value = _MockHTTPXClient([
-        _MockResponse(530, b"", "text/plain"),
-        _MockResponse(530, b"", "text/plain"),
-        _MockResponse(530, b"", "text/plain"),
-    ])
-    seed = abs(hash("volcano")) % 1000
-    picsum_url = f"https://picsum.photos/seed/{seed}/768/768"
-    mock_fallback.return_value = picsum_url
-
-    chunks = [c async for c in handle_generate_image("volcano", mock_db, "test_id")]
-
-    payload = json.loads(chunks[0][6:])
-    text = payload["choices"][0]["delta"]["content"]
-    assert f"![Relevant Image]({picsum_url})" in text
-    assert "temporarily unavailable" in text
-    assert "530" not in text
-
-
-# ── live DDGS image search health check ──────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_fallback_ddgs_image_always_returns_url():
-    """_fallback_ddgs_image must ALWAYS return a URL — even if DDGS is rate-limited,
-    the Picsum.photos fallback ensures we never return None."""
-    url = await _fallback_ddgs_image("night sky stars moon")
-    assert url is not None, "_fallback_ddgs_image returned None – Picsum fallback broken"
-    assert url.startswith("http"), f"URL is not HTTP: {url}"
 
 
 # ── pollinations availability probe (skipped when down) ──────────────────────

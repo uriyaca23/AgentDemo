@@ -42,31 +42,7 @@ async def _try_pollinations(client: httpx.AsyncClient, query: str) -> bytes:
     raise RuntimeError(f"Pollinations unavailable after {POLLINATIONS_MAX_ATTEMPTS} attempts (last HTTP status: {last_status})")
 
 
-async def _fallback_ddgs_image(query: str) -> str | None:
-    """Return a relevant image URL.
 
-    Strategy:
-    1. Try DuckDuckGo image search (may be rate-limited sometimes).
-    2. Fall back to a deterministic Picsum.photos URL (always works).
-    """
-    # 1 – Try DDGS images
-    try:
-        from ddgs import DDGS
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(
-            None,
-            lambda: list(DDGS().images(query, max_results=5, size="Large"))
-        )
-        for r in results:
-            url = r.get("image") or r.get("url")
-            if url and url.startswith("http"):
-                return url
-    except Exception:
-        pass
-
-    # 2 – Picsum deterministic fallback (seed from query hash so consistent)
-    seed = abs(hash(query)) % 1000
-    return f"https://picsum.photos/seed/{seed}/768/768"
 
 
 def _save_image(data: bytes, ext: str = "jpg") -> tuple[str, str]:
@@ -95,20 +71,10 @@ async def handle_generate_image(query: str, db: Session, conv_id: str):
                 )
 
             except RuntimeError as poll_err:
-                # ── Fallback: DuckDuckGo image search ─────────────────────
-                fallback_url = await _fallback_ddgs_image(query)
-                if fallback_url:
-                    markdown = (
-                        f"![Relevant Image]({fallback_url})\n\n"
-                        f"⚠️ *Live image generation is temporarily unavailable. "
-                        f"Showing the most relevant web image for: {query}*"
-                    )
-                else:
-                    markdown = (
-                        f"⚠️ **Image generation failed**: The generation service is down and "
-                        f"no suitable fallback image was found for `{query}`. "
-                        f"Please try again later."
-                    )
+                markdown = (
+                    f"⚠️ **Image generation failed**: {poll_err}. "
+                    f"Please try again later."
+                )
 
         # Save to conversation history
         if conv_id and db:

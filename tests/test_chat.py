@@ -58,9 +58,8 @@ async def test_chat_skill_interception():
         assert "data: {" in joined
         # Valid outcomes:
         #   1. Pollinations succeeded → contains "![Generated Image]"
-        #   2. Pollinations down, fallback image found → contains "![Relevant Image]"
-        #   3. Everything failed → friendly error message with "failed" or "unavailable"
-        has_image = "![Generated Image]" in joined or "![Relevant Image]" in joined
+        #   2. Everything failed → friendly error message with "failed" or "unavailable"
+        has_image = "![Generated Image]" in joined
         has_error = "failed" in joined.lower() or "unavailable" in joined.lower()
         assert has_image or has_error, (
             f"Skill response was neither an image nor a friendly error.\nGot: {joined[:400]}"

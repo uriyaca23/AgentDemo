@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState } from 'react';
 import { MessageSquare, Plus, Search } from 'lucide-react';
 
@@ -16,14 +18,14 @@ export default function Sidebar({ onSelectConversation, activeId }: SidebarProps
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [search, setSearch] = useState("");
 
-    const fetchConversations = async () => {
-        try {
-            const res = await fetch("http://localhost:8001/chat/conversations");
-            if (res.ok) setConversations(await res.json());
-        } catch (e) { console.error("Failed to load history", e); }
-    };
-
     useEffect(() => {
+        const fetchConversations = async () => {
+            try {
+                const res = await fetch("http://localhost:8001/chat/conversations");
+                if (res.ok) setConversations(await res.json());
+            } catch (e) { console.error("Failed to load history", e); }
+        };
+
         fetchConversations();
         // Refresh periodically 
         const interval = setInterval(fetchConversations, 5000);

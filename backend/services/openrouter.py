@@ -138,6 +138,15 @@ async def generate_chat_openrouter(request: ChatRequest, offline_mode: bool, con
                         # Gracefully fallback if the model completely lacks tool-use capabilities
                         if "tools" in payload and "tool" in error_text.lower():
                             payload.pop("tools", None)
+                            
+                            # Give the model instructions to explain why no tool was used
+                            tool_fail_msg = " [System Notice: Your model variant on OpenRouter does not support tool use capabilities. Apologize to the user and explain that you cannot search the web or use tools due to model limitations.]"
+                            if payload.get("messages") and payload["messages"][-1]["role"] == "user":
+                                if isinstance(payload["messages"][-1]["content"], str):
+                                    payload["messages"][-1]["content"] += tool_fail_msg
+                                elif isinstance(payload["messages"][-1]["content"], list):
+                                    payload["messages"][-1]["content"].append({"type": "text", "text": tool_fail_msg})
+
                             retry_needed = True
                             continue
                         else:

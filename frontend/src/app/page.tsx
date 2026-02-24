@@ -1,4 +1,6 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useRef, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";

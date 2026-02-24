@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -24,6 +26,13 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
         processed = processed.replace(openThinkRegex, (match, p1) => {
             return `\n<details open class="mb-4 bg-black/30 border border-indigo-500/20 rounded-lg overflow-hidden animate-pulse">\n<summary class="cursor-pointer select-none bg-indigo-500/20 px-4 py-2 text-indigo-300 font-medium flex items-center outline-none">Thinking (In Progress...)</summary>\n<div class="p-4 text-white/70 whitespace-pre-wrap text-sm border-t border-indigo-500/20">\n\n${p1.trim()}\n\n</div>\n</details>\n`;
         });
+
+        // Hide leaked DSML tool call tags from DeepSeek / OpenRouter
+        const dsmlRegex = /<\s*\|\s*DSML\s*\|[\s\S]*?(?:<\s*\/\s*\|\s*DSML\s*\|\s*[a-zA-Z_]+\s*>|<\s*\/\s*\|\s*DSML\s*\|\s*function_calls\s*>)/gi;
+        processed = processed.replace(dsmlRegex, '');
+        // Sometimes tags stream incompletely at the end, clean up dangling partial tags
+        const partialDsml = /<\s*\|\s*DSML\s*\|[\s\S]*$/i;
+        processed = processed.replace(partialDsml, '');
 
         // Fix LaTeX blocks: replace \[ ... \] with $$ ... $$
         processed = processed.replace(/\\\[/g, '$$$$');

@@ -46,6 +46,15 @@ npm-debug.log*
 # Test artifacts
 test.png
 test_schemas.py
+jest_*.js
+jest_*.json
+jest_*.txt
+lint_*.json
+lint_*.txt
+out.json
 
 # Gemini artifacts
 .gemini/
+
+# App artifacts
+data/
