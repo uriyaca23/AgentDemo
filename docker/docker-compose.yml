@@ -1,20 +1,63 @@
-version: '3.8'
+# ─────────────────────────────────────────────────────────────────
+# Docker Compose — Full LLM Chatbot Stack
+# ─────────────────────────────────────────────────────────────────
+# Launches three services:
+#   1. emulator  — vLLM + OpenRouter-compatible API (GPU required)
+#   2. app       — Frontend (Next.js :3000) + Backend (FastAPI :8001)
+#
+# Quick start:
+#   docker compose up --build
+#
+# For local testing with small model (RTX 3080):
+#   docker compose --profile test up --build
+# ─────────────────────────────────────────────────────────────────
 
 services:
-  internal-llm:
+  # ── OpenRouter Emulator (GPU) ──────────────────────────────────
+  emulator:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.test
     ports:
       - "8000:8000"
     volumes:
-      # Mount the local model weight directory here
-      # Make sure the host path has the AWQ model downloaded
-      - /path/to/weights/Qwen2.5-VL-72B-Instruct-AWQ:/app/model
+      - emulator-model-cache:/app/model_cache
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 3
-              capabilities: [gpu]
+              count: 1
+              capabilities: [ gpu ]
+    healthcheck:
+      test: [ "CMD", "curl", "-sf", "http://localhost:8000/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+  # ── App (Frontend + Backend) ───────────────────────────────────
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.app
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:8001"
+    ports:
+      - "3000:3000"
+      - "8001:8001"
+    environment:
+      - LLM_BASE_URL=http://emulator:8000/api/v1
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    depends_on:
+      emulator:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-sf", "http://localhost:8001/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  emulator-model-cache:

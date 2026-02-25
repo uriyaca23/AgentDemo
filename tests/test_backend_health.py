@@ -25,10 +25,10 @@ async def test_chat_conversations_route_exists():
 
 @pytest.mark.asyncio
 async def test_models_route_exists():
-    """Verify the models router returns the internal model by default"""
+    """Verify the models router returns at least one model"""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/models")
         assert response.status_code == 200
         data = response.json()
         assert len(data) > 0
-        assert data[0]["provider"] == "INTERNAL"
+        assert data[0]["provider"] in ("INTERNAL", "OPENROUTER")

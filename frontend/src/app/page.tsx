@@ -7,7 +7,8 @@ import Sidebar from "@/components/Sidebar";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ApiKeyModal from "@/components/ApiKeyModal";
 import ModelSelector from "@/components/ModelSelector";
-import { Send, Upload, Settings2, ShieldCheck, Zap, Bot, Brain, X, ImageIcon } from "lucide-react";
+import { API_BASE } from "@/lib/api";
+import { Send, Upload, Settings2, ShieldCheck, Zap, Bot, Brain, X, ImageIcon, Cloud, Monitor } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -28,6 +29,7 @@ export default function Home() {
   // UI states
   const [offlineMode, setOfflineMode] = useState(false);
   const [statusText, setStatusText] = useState("Connecting...");
+  const [provider, setProvider] = useState<"emulator" | "openrouter">("emulator");
 
   // Skill states
   const [showSkills, setShowSkills] = useState(false);
@@ -36,18 +38,33 @@ export default function Home() {
   ];
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const selectedModelData = availableModels.find(m => m.id === model);
+
+  // Auto-fallback mode if selected model doesn't support current mode
+  useEffect(() => {
+    if (!selectedModelData) return;
+    const caps = selectedModelData.capabilities || { thinking: "simulated", tools: true, multimodal: true };
+
+    if (mode === "thinking" && caps.thinking === "none") {
+      setMode("auto");
+    }
+  }, [model, availableModels, mode, selectedModelData]);
 
   // Initial load
   useEffect(() => {
-    fetch("http://localhost:8001/models").then(r => r.json()).then(m => {
+    fetch(`${API_BASE}/models`).then(r => r.json()).then(m => {
       setAvailableModels(m);
       setStatusText("Connected");
       if (m.length > 0 && !m.find((x: any) => x.id === model)) setModel(m[0].id);
     }).catch(() => setStatusText("Backend Offline"));
 
-    fetch("http://localhost:8001/settings/network-mode").then(r => r.json()).then(data => {
+    fetch(`${API_BASE}/settings/network-mode`).then(r => r.json()).then(data => {
       setOfflineMode(!data.enabled);
     });
+
+    fetch(`${API_BASE}/settings/llm-provider`).then(r => r.json()).then(data => {
+      setProvider(data.provider);
+    }).catch(() => { });
   }, []);
 
   // Scroll to bottom
@@ -64,7 +81,7 @@ export default function Home() {
     }
     setActiveConvId(id);
     try {
-      const res = await fetch(`http://localhost:8001/chat/conversations/${id}`);
+      const res = await fetch(`${API_BASE}/chat/conversations/${id}`);
       const data = await res.json();
       const parsed = data.messages.map((m: any) => ({
         role: m.role,
@@ -107,7 +124,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8001/chat", {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -171,15 +188,29 @@ export default function Home() {
   const toggleNetwork = async () => {
     const newVal = !offlineMode;
     setOfflineMode(newVal);
-    await fetch("http://localhost:8001/settings/network-mode", {
+    await fetch(`${API_BASE}/settings/network-mode`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: !newVal })
     });
-    // Relist models
-    const m = await fetch("http://localhost:8001/models").then(r => r.json());
-    setAvailableModels(m);
-    if (m.length > 0) setModel(m[0].id);
+  };
+
+  const toggleProvider = async () => {
+    const newProvider = provider === "emulator" ? "openrouter" : "emulator";
+    try {
+      await fetch(`${API_BASE}/settings/llm-provider`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: newProvider })
+      });
+      setProvider(newProvider);
+      // Re-fetch models for the new provider
+      const m = await fetch(`${API_BASE}/models`).then(r => r.json());
+      setAvailableModels(m);
+      if (m.length > 0) setModel(m[0].id);
+    } catch (e) {
+      console.error("Failed to toggle provider", e);
+    }
   };
 
   return (
@@ -202,27 +233,48 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <div className="flex bg-black/40 rounded-lg p-1 border border-white/5">
-              {['auto', 'fast', 'thinking', 'pro'].map(m => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`px-4 py-1.5 rounded-md text-xs font-semibold capitalize transition-all flex items-center gap-1.5 ${mode === m ? 'bg-indigo-600 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}`}
-                >
-                  {m === 'auto' && <Bot size={14} />}
-                  {m === 'fast' && <Zap size={14} />}
-                  {m === 'thinking' && <Brain size={14} />}
-                  {m === 'pro' && <ShieldCheck size={14} />}
-                  {m}
-                </button>
-              ))}
+              {['auto', 'fast', 'thinking', 'pro'].map(m => {
+                const caps = selectedModelData?.capabilities || { thinking: "simulated", tools: true, multimodal: true };
+                const isSupported = m === 'auto' ||
+                  (m === 'thinking' && caps.thinking !== 'none') ||
+                  (m === 'fast') ||
+                  (m === 'pro');
+
+                return (
+                  <button
+                    key={m}
+                    onClick={() => isSupported && setMode(m)}
+                    disabled={!isSupported}
+                    className={`px-4 py-1.5 rounded-md text-xs font-semibold capitalize transition-all flex items-center gap-1.5 
+                      ${mode === m ? 'bg-indigo-600 text-white shadow-lg' : 'text-white/40 hover:text-white/80'}
+                      ${!isSupported ? 'opacity-20 cursor-not-allowed grayscale' : ''}`}
+                    title={!isSupported ? `${m} mode not supported by this model` : ""}
+                  >
+                    {m === 'auto' && <Bot size={14} />}
+                    {m === 'fast' && <Zap size={14} />}
+                    {m === 'thinking' && <Brain size={14} />}
+                    {m === 'pro' && <ShieldCheck size={14} />}
+                    {m}
+                  </button>
+                );
+              })}
             </div>
+
+            <button
+              onClick={toggleProvider}
+              data-testid="provider-toggle"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors border ${provider === 'emulator' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-violet-500/10 text-violet-400 border-violet-500/20'}`}
+            >
+              {provider === 'emulator' ? <Monitor size={14} /> : <Cloud size={14} />}
+              {provider === 'emulator' ? 'Emulator' : 'OpenRouter'}
+            </button>
 
             <button
               onClick={toggleNetwork}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors border ${offlineMode ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}
             >
               <div className={`w-2 h-2 rounded-full ${offlineMode ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse'}`} />
-              {offlineMode ? 'Offline Mode' : 'Online'}
+              {offlineMode ? 'Offline' : 'Online'}
             </button>
           </div>
         </header>

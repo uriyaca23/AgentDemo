@@ -1,11 +1,10 @@
 # ─────────────────────────────────────────────────────────────────
-# OpenRouter Emulator — Dockerfile
-# Builds on top of vLLM's OpenAI-compatible server image and adds
-# a FastAPI translation layer that emulates the OpenRouter API.
+# OpenRouter Emulator — Test Dockerfile
+# Uses a tiny model (configurable via MODEL_NAME env) for local
+# testing on a single consumer GPU (e.g. RTX 3080).
 # ─────────────────────────────────────────────────────────────────
 FROM vllm/vllm-openai:latest
 
-# Disable telemetry for air-gapped deployment
 ENV VLLM_NO_USAGE_STATS=1
 ENV DO_NOT_TRACK=1
 
@@ -13,14 +12,23 @@ ENV DO_NOT_TRACK=1
 COPY emulator/requirements.txt /app/emulator/requirements.txt
 RUN pip install --no-cache-dir -r /app/emulator/requirements.txt
 
+# Install huggingface-hub for downloading the test model inside the container
+RUN pip install --no-cache-dir huggingface-hub
+
 # Copy emulator application
 COPY emulator/emulator_app.py /app/emulator/emulator_app.py
-COPY emulator/start.sh /app/emulator/start.sh
-RUN chmod +x /app/emulator/start.sh
 
-# Expose the emulator API port (vLLM runs internally on 5000)
+# Copy the test-specific start script
+COPY emulator/start_test.sh /app/emulator/start_test.sh
+RUN chmod +x /app/emulator/start_test.sh
+
 EXPOSE 8000
 
-# Model weights are mounted at runtime to /app/model
-# Start both vLLM and the emulator
-ENTRYPOINT ["/app/emulator/start.sh"]
+# Defaults for testing — tiny model, single GPU, no quantization
+ENV MODEL_NAME="Qwen/Qwen2.5-0.5B-Instruct"
+ENV TENSOR_PARALLEL_SIZE=1
+ENV QUANTIZATION=none
+ENV GPU_MEMORY_UTILIZATION=0.85
+ENV MAX_MODEL_LEN=2048
+
+ENTRYPOINT ["/app/emulator/start_test.sh"]

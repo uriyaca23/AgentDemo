@@ -59,15 +59,10 @@ async def chat_completion(request: ChatRequest, db: Session = Depends(get_db)):
     if skill_generator:
         generator = skill_generator
     else:
-        # LLM Router
-        if request.model == "qwen2.5-vl-72b-instruct":
-            # Just fallback dummy stream for local missing model parity during tests
-            async def fallback(): yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Internal Model Offline.'}}]})}\n\n"
-            generator = fallback()
-        else:
-            # We always route to OpenRouter. 
-            # If offline_mode is true, OpenRouter will simply disable tools/web_search internally.
-            generator = openrouter.generate_chat_openrouter(request, offline_mode, conv_id, db)
+        # All models route through the same LLM service.
+        # When LLM_BASE_URL points to OpenRouter, this uses the external API.
+        # When LLM_BASE_URL points to the emulator, this uses the internal model.
+        generator = openrouter.generate_chat_openrouter(request, offline_mode, conv_id, db)
     
     return StreamingResponse(
         generator, 

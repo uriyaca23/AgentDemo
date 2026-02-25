@@ -43,6 +43,15 @@ Desktop.ini
 *.log
 npm-debug.log*
 
+# Loose temp files
+app_logs.txt
+app_crash.log
+compat_tests.log
+logs.txt
+
+# Temp directory
+tmp/
+
 # Test artifacts
 test.png
 test_schemas.py
@@ -58,3 +67,4 @@ out.json
 
 # App artifacts
 data/
+

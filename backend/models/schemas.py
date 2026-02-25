@@ -16,3 +16,6 @@ class NetworkToggle(BaseModel):
 
 class UnlockRequest(BaseModel):
     password: str
+
+class LlmProviderToggle(BaseModel):
+    provider: str  # "emulator" or "openrouter"

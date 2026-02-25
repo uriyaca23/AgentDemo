@@ -56,20 +56,31 @@ AgentDemo/
 │       └── page.test.tsx
 │
 ├── tests/                    # ── Backend Pytest Suite ──────────────────
-│   ├── test_api_key.py       # API key file detection
-│   ├── test_backend_health.py # Root endpoint health check
-│   ├── test_chat.py          # Chat endpoint + skill interception
-│   ├── test_history.py       # Conversation CRUD operations
-│   ├── test_models.py        # Model listing endpoint
-│   ├── test_openrouter.py    # OpenRouter streaming, tool fallback, context retention
-│   ├── test_settings.py      # Network mode toggle
-│   ├── test_skills.py        # Image generation: success, retry, error paths
-│   └── test_titling_model.py # Background title generation
+│   ├── test_api_key.py           # API key file detection
+│   ├── test_backend_health.py    # Root endpoint health check
+│   ├── test_chat.py              # Chat endpoint + skill interception
+│   ├── test_history.py           # Conversation CRUD operations
+│   ├── test_models.py            # Model listing + name prettification
+│   ├── test_openrouter.py        # OpenRouter streaming, tool fallback, context retention
+│   ├── test_provider_toggle.py   # Emulator ↔ OpenRouter toggle + model name tests
+│   ├── test_settings.py          # Network mode toggle
+│   ├── test_skills.py            # Image generation: success, retry, error paths
+│   ├── test_titling.py           # Background title generation + auto-detect
+│   └── test_titling_model.py     # Legacy title generation tests
 │
 ├── docker/                   # ── Containerization ─────────────────────
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── openshift-deployment.yaml
+│   ├── Dockerfile            # Production: vLLM + OpenRouter emulator
+│   ├── Dockerfile.app        # Multi-stage: Node build → Python runtime (frontend+backend)
+│   ├── Dockerfile.test       # Test: small model for local GPU testing
+│   ├── docker-compose.yml    # Full stack: emulator + app (frontend+backend)
+│   ├── start-app.sh          # Entrypoint: starts backend + frontend with health checks
+│   ├── openshift-deployment.yaml  # K8s/OpenShift manifest (templated)
+│   ├── deploy-openshift.ps1  # Interactive OpenShift deployment script
+│   └── emulator/             # OpenRouter API emulator
+│       ├── emulator_app.py   # FastAPI translation layer (vLLM → OpenRouter format)
+│       ├── requirements.txt  # Emulator Python dependencies
+│       ├── start.sh          # Production entrypoint
+│       └── start_test.sh     # Test entrypoint (auto-downloads small model)
 │
 ├── docs/                     # ── Documentation ────────────────────────
 │   ├── deployment_guide.md
@@ -107,53 +118,66 @@ AgentDemo/
 │  │  /chat router                                          │  │
 │  │   1. Save to history (SQLite via SQLAlchemy)           │  │
 │  │   2. Check for skill trigger (@generate_image)         │  │
-│  │   3. If no skill → proxy to OpenRouter (streaming)     │  │
+│  │   3. If no skill → proxy to LLM (streaming)           │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                               │
 │  ┌─ Services ────────────────────────────────────────────┐   │
-│  │                                                        │   │
 │  │  openrouter.py                                         │   │
-│  │  ├── Streaming SSE proxy to OpenRouter API             │   │
+│  │  ├── Streaming SSE proxy to LLM_BASE_URL              │   │
 │  │  ├── Tool-use: web_search → DDGS text + news scrape    │   │
 │  │  ├── Auto-retry without tools if model rejects them    │   │
 │  │  └── Background title generation after first message   │   │
 │  │                                                        │   │
-│  │  skills.py                                             │   │
-│  │  ├── @generate_image → Pollinations AI (Flux model)    │   │
-│  │  ├── 3-attempt retry with exponential backoff          │   │
-│  │  └── Saves generated images to /data/ directory        │   │
-│  │                                                        │   │
-│  │  history.py                                            │   │
-│  │  └── CRUD operations on ConversationDB (SQLite/JSON)   │   │
+│  │  skills.py  │  history.py                              │   │
 │  └────────────────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────────────┘
-                         │
-                         ▸ HTTPS
-            ┌────────────────────────┐
-            │  OpenRouter.ai API     │
-            │  (GPT-4o, DeepSeek,    │
-            │   Claude, Gemini, etc) │
-            └────────────────────────┘
+│                                                               │
+│  LLM_BASE_URL (env var, default: OpenRouter)                  │
+└───────────────────────────┬───────────────────────────────────┘
+                            │
+               ┌────────────┴────────────┐
+               ▸                         ▸
+┌──────────────────────────┐  ┌─────────────────────────────┐
+│  OpenRouter.ai API       │  │  Docker Emulator (internal) │
+│  (GPT-4o, DeepSeek,     │  │  ┌─ Emulator API :8000 ──┐  │
+│   Claude, Gemini, etc)   │  │  │  OpenRouter-compat     │  │
+│  (for development)       │  │  └──────────┬────────────┘  │
+└──────────────────────────┘  │             ▸               │
+                              │  ┌─ vLLM :5000 ──────────┐  │
+                              │  │  Qwen2.5-VL-72B       │  │
+                              │  └───────────────────────┘  │
+                              │  (for organization)         │
+                              └─────────────────────────────┘
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Option A: Docker (Recommended)
+
+```bash
+cd docker
+docker compose up --build
+```
+
+This launches the full stack (emulator + frontend + backend). Open **http://localhost:3000**.
+
+### Option B: Local Development
+
+#### Prerequisites
 - **Python 3.11+** with pip
 - **Node.js 20+** with npm
 - An **OpenRouter API key** (or unlock the encrypted one via the UI)
 
-### 1. Backend
+#### 1. Backend
 
 ```bash
 cd backend
-pip install fastapi uvicorn sqlalchemy httpx ddgs beautifulsoup4 pyzipper
+pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8001
 ```
 
-### 2. Frontend
+#### 2. Frontend
 
 ```bash
 cd frontend
@@ -163,7 +187,7 @@ npm run dev
 
 Open **http://localhost:3000** in your browser.
 
-### 3. API Key Setup
+### API Key Setup
 
 Either:
 - Place your OpenRouter API key in `api_key.txt` at the project root, or
@@ -176,12 +200,14 @@ Either:
 | Method | Endpoint                          | Description                                       |
 |--------|-----------------------------------|---------------------------------------------------|
 | GET    | `/`                               | Health check                                      |
-| GET    | `/models`                         | List available models (internal + OpenRouter)     |
+| GET    | `/models`                         | List available models (prettified names)          |
 | GET    | `/chat/conversations`             | List all conversations (newest first)             |
 | GET    | `/chat/conversations/{id}`        | Load a single conversation with messages          |
 | POST   | `/chat`                           | Stream a chat completion (SSE) or trigger a skill |
 | GET    | `/settings/network-mode`          | Get online/offline toggle state                   |
 | PUT    | `/settings/network-mode`          | Toggle online/offline mode                        |
+| GET    | `/settings/llm-provider`          | Get active LLM provider (emulator/openrouter)     |
+| PUT    | `/settings/llm-provider`          | Switch between emulator and OpenRouter            |
 | GET    | `/settings/api-key-status`        | Check if API key exists and is valid              |
 | POST   | `/settings/unlock-key`            | Decrypt API key from zip with password            |
 | GET    | `/data/{filename}`                | Serve generated images (static mount)             |
@@ -280,14 +306,29 @@ npx jest
 
 ---
 
-## 🐳 Docker
+## 🐳 Docker / Emulator
 
+### Development (OpenRouter)
+By default, no Docker is needed — the backend proxies to OpenRouter.
+
+### Local Testing (Docker + GPU)
 ```bash
 cd docker
-docker-compose up --build
+docker build -t openrouter-emulator-test -f Dockerfile.test .
+docker run -d --gpus all -p 8000:8000 --name emulator-test openrouter-emulator-test
+```
+Then start the backend with:
+```bash
+LLM_BASE_URL=http://localhost:8000/api/v1 python -m uvicorn main:app --reload --port 8001
 ```
 
-See `docs/deployment_guide.md` for OpenShift deployment instructions.
+### Organization Deployment (OpenShift)
+```powershell
+cd docker
+.\deploy-openshift.ps1
+```
+
+See `docs/deployment_guide.md` for detailed instructions.
 
 ---
 

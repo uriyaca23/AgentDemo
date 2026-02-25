@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState } from 'react';
 import { MessageSquare, Plus, Search } from 'lucide-react';
+import { API_BASE } from '@/lib/api';
 
 interface Conversation {
     id: string;
@@ -21,7 +22,7 @@ export default function Sidebar({ onSelectConversation, activeId }: SidebarProps
     useEffect(() => {
         const fetchConversations = async () => {
             try {
-                const res = await fetch("http://localhost:8001/chat/conversations");
+                const res = await fetch(`${API_BASE}/chat/conversations`);
                 if (res.ok) setConversations(await res.json());
             } catch (e) { console.error("Failed to load history", e); }
         };

@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { Lock, Unlock, AlertCircle, Key, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { API_BASE } from "@/lib/api";
 
 export default function ApiKeyModal() {
     const [isOpen, setIsOpen] = useState(false);
@@ -16,7 +17,7 @@ export default function ApiKeyModal() {
     useEffect(() => {
         const checkStatus = async () => {
             try {
-                const res = await fetch("http://localhost:8001/settings/api-key-status");
+                const res = await fetch(`${API_BASE}/settings/api-key-status`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data.is_locked) {
@@ -38,7 +39,7 @@ export default function ApiKeyModal() {
         setError("");
 
         try {
-            const res = await fetch("http://localhost:8001/settings/unlock-key", {
+            const res = await fetch(`${API_BASE}/settings/unlock-key`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ password })

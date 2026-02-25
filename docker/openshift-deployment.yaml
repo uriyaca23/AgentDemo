@@ -1,54 +1,99 @@
+# ─────────────────────────────────────────────────────────────────
+# OpenRouter Emulator — OpenShift Deployment
+# ─────────────────────────────────────────────────────────────────
+# Placeholders (marked with __PLACEHOLDER__) are replaced at deploy
+# time by the deploy-openshift.ps1 script.
+# ─────────────────────────────────────────────────────────────────
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: internal-llm
+  name: openrouter-emulator
+  namespace: __NAMESPACE__
   labels:
-    app: internal-llm
+    app: openrouter-emulator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: internal-llm
+      app: openrouter-emulator
   template:
     metadata:
       labels:
-        app: internal-llm
+        app: openrouter-emulator
     spec:
       containers:
-      - name: vllm
-        image: vllm/vllm-openai:latest
-        command:
-        - "python3"
-        - "-m"
-        - "vllm.entrypoints.openai.api_server"
-        - "--model"
-        - "/app/model"
-        - "--tensor-parallel-size"
-        - "3"
-        - "--quantization"
-        - "awq"
+      - name: emulator
+        image: __REGISTRY__/openrouter-emulator:latest
         ports:
         - containerPort: 8000
+          name: api
+        env:
+        - name: TENSOR_PARALLEL_SIZE
+          value: "__GPU_COUNT__"
+        - name: QUANTIZATION
+          value: "__QUANTIZATION__"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "__GPU_MEMORY_UTIL__"
+        - name: MAX_MODEL_LEN
+          value: "__MAX_MODEL_LEN__"
         volumeMounts:
         - name: model-weights
           mountPath: /app/model
+          readOnly: true
         resources:
           limits:
-            nvidia.com/gpu: "3"
+            nvidia.com/gpu: "__GPU_COUNT__"
+          requests:
+            nvidia.com/gpu: "__GPU_COUNT__"
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 180
+          periodSeconds: 30
       volumes:
       - name: model-weights
-        hostPath:
-          path: /data/models/Qwen2.5-VL-72B-Instruct-AWQ
+        persistentVolumeClaim:
+          claimName: __PVC_NAME__
+      # Uncomment if using hostPath instead of PVC:
+      # - name: model-weights
+      #   hostPath:
+      #     path: __MODEL_HOST_PATH__
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: internal-llm-service
+  name: openrouter-emulator-service
+  namespace: __NAMESPACE__
 spec:
   selector:
-    app: internal-llm
+    app: openrouter-emulator
   ports:
     - protocol: TCP
       port: 8000
       targetPort: 8000
+      name: api
+
+---
+# Optional: Route for external access (OpenShift-specific)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openrouter-emulator-route
+  namespace: __NAMESPACE__
+spec:
+  to:
+    kind: Service
+    name: openrouter-emulator-service
+  port:
+    targetPort: api
+  tls:
+    termination: edge

@@ -61,7 +61,7 @@ export default function ModelSelector({ models, selectedId, onSelect }: ModelSel
                 className="flex items-center justify-between w-64 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:border-indigo-500/50 hover:bg-black/60 transition-colors text-white"
                 data-testid="model-selector-button"
             >
-                <div className="truncate text-left flex-1" data-testid="selected-model-name">
+                <div className="truncate text-left flex-1" data-testid="selected-model-name" title={selectedModel ? selectedModel.id : ""}>
                     {selectedModel ? selectedModel.name : "Loading models..."}
                 </div>
                 <ChevronDown size={14} className={`ml-2 text-white/50 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -99,7 +99,7 @@ export default function ModelSelector({ models, selectedId, onSelect }: ModelSel
                                     data-testid={`model-option-${m.id.replace(/[^a-zA-Z0-9]/g, '-')}`}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-sm text-white truncate pr-2">{m.name}</span>
+                                        <span className="font-semibold text-sm text-white truncate pr-2" title={m.id}>{m.name}</span>
                                         <span className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider bg-white/10 text-white/60 shrink-0">
                                             {m.provider}
                                         </span>

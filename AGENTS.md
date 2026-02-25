@@ -10,7 +10,8 @@
 | Frontend  | Next.js 16, React 19, Tailwind CSS 4, TypeScript   | 3000  |
 | Backend   | FastAPI (Python 3.11+), SQLAlchemy, httpx           | 8001  |
 | Database  | SQLite (`chat_history.db` at project root)          | —     |
-| LLM API   | OpenRouter.ai (streaming SSE proxy)                 | —     |
+| LLM API   | OpenRouter.ai OR Internal Emulator (configurable)   | —     |
+| Emulator  | vLLM + FastAPI wrapper (Docker, OpenRouter-compat)   | 8000  |
 | Image Gen | Pollinations.ai (free, Flux model, no auth)         | —     |
 | Web Search| DuckDuckGo (ddgs library, text + news + scrape)     | —     |
 
@@ -73,18 +74,28 @@ cd frontend && npx jest
 - `frontend/src/components/ApiKeyModal.tsx` — First-run modal to unlock encrypted API key.
 
 ### Configuration
-- `backend/settings.py` — Runtime singleton with `_network_enabled` flag.
+- `backend/settings.py` — Runtime singleton with `_network_enabled` flag and `LLM_BASE_URL` (configurable via env var, defaults to OpenRouter).
+  - `is_internal_llm()` — returns True when pointing at the internal emulator.
 - `backend/database.py` — SQLAlchemy engine pointing to `../chat_history.db`.
-- `api_key.txt` — OpenRouter API key (git-ignored). Read by `get_api_key()` in multiple places.
+- `api_key.txt` — OpenRouter API key (git-ignored). Skipped when using internal emulator.
+
+### Emulator (Docker)
+- `docker/emulator/emulator_app.py` — FastAPI wrapper translating vLLM's API to OpenRouter format.
+- `docker/emulator/start.sh` — Entrypoint: starts vLLM on port 5000, emulator on port 8000.
+- `docker/Dockerfile` — Production image (vLLM + emulator).
+- `docker/Dockerfile.test` — Test image (downloads small model for local GPU testing).
+- `docker/deploy-openshift.ps1` — Interactive deployment script.
 
 ## Conventions
 
 1. **SSE Streaming**: All `/chat` responses are `text/event-stream`. Each chunk: `data: {"choices":[{"delta":{"content":"..."}}]}\n\n`.
 2. **Conversation IDs**: Returned in `x-conversation-id` response header. Frontend sends `conversation_id` in subsequent requests.
-3. **Skill Triggers**: Prefixed with `@`. Currently only `@generate_image <prompt>` is implemented. Detected in `skills.process_skills()` before OpenRouter is called.
+3. **Skill Triggers**: Prefixed with `@`. Currently only `@generate_image <prompt>` is implemented. Detected in `skills.process_skills()` before the LLM is called.
 4. **Modes**: `auto`, `fast`, `thinking`, `pro` — injected as system instructions in `openrouter.py`.
 5. **Offline Mode**: Disables tool injection; adds system instruction about no internet access.
 6. **Error Handling**: Backend wraps errors in `data: {"error": "..."}` SSE chunks. Frontend displays them as `> ⚠️ Error: ...` blockquotes.
+7. **Configurable LLM**: Set `LLM_BASE_URL` env var to switch between OpenRouter and internal emulator. Default: `https://openrouter.ai/api/v1`.
+8. **Unified Routing**: ALL models (including internal) route through `generate_chat_openrouter()`. No special-case fallbacks.
 
 ## Common Pitfalls
 
@@ -109,3 +120,42 @@ cd frontend && npx jest
 | Markdown Rendering| — | ✅ |
 | API Key Modal     | — | ✅ |
 | Sidebar           | — | ✅ |
+
+## ⚠️ MANDATORY TESTING RULES ⚠️
+
+**These rules are NON-NEGOTIABLE. Failure to follow them is unacceptable.**
+
+### 1. All Tests Must Pass Before Completing Any Task
+- After finishing any code change, run `python -m pytest tests/ -v` from the project root.
+- **100% of tests MUST pass.** If any test fails, you MUST fix the failure before continuing to other tasks. You CANNOT skip failing tests or proceed to other work.
+
+### 2. Every New Feature or Bugfix MUST Add Regression Tests
+- Every change that adds, modifies, or fixes a feature MUST include corresponding test(s) in `tests/test_unified_integration.py` (or the appropriate existing test file).
+- These tests prevent the fixed/added behavior from ever regressing.
+- **Past tests may NEVER be deleted.** They may only be modified if the project is being fundamentally restructured.
+
+### 3. Integration Tests Use Random Model Selection
+- The unified integration test (`tests/test_unified_integration.py`) randomly selects **5 different OpenRouter models** per run.
+- This ensures you never create a fix for one model that breaks other models.
+- The emulator must also be tested alongside OpenRouter — never skip emulator tests.
+
+### 4. All Testing Is Programmatic — Never Browser-Based
+- All functionality is validated via code (HTTP requests, SSE parsing, content assertions).
+- Never look at the browser to verify results — dissect every response programmatically.
+
+### 5. Comprehensive Validation
+- Check that response content is non-empty (no empty chat bubbles).
+- Check that titles are generated, correct, and displayed.
+- Check that thinking mode produces `<think>` tags or reasoning content.
+- Check that skills (e.g., `@generate_image`) return valid markdown or friendly errors.
+- Check that web search returns results and the search indicator appears.
+- Check that markdown rendering pipeline preserves code blocks, links, lists, bold/italic, LaTeX, etc.
+- If a model doesn't support a feature (e.g., tool use), verify the graceful fallback works — no empty bubbles or crashes.
+
+### 6. Emulator Docker Must Be Running
+- The emulator Docker container must be up before running integration tests.
+- If it's down, start it before proceeding. Never skip emulator tests.
+
+### 7. API Key Is Always Available
+- The API key is always available via `locked_secrets/api_key.zip` (password: see `tests/test_openrouter.py`).
+- Never skip OpenRouter tests claiming the key is unavailable.
