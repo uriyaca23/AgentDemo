@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.agents
+.agent
+_agents
+_agent
+brain
+model_cache
+__pycache__
+*.pyc
+.ipynb_checkpoints
+.pytest_cache

@@ -33,6 +33,9 @@ export default function Home() {
 
   // Skill states
   const [showSkills, setShowSkills] = useState(false);
+  const [currentNode, setCurrentNode] = useState<string | null>(null);
+  const [trace, setTrace] = useState<{ type: string, node?: string, tool?: string, content?: string }[]>([]);
+
   const availableSkills = [
     { command: "@generate_image", description: "Generate a custom AI image from a text prompt." }
   ];
@@ -146,6 +149,7 @@ export default function Home() {
       const decoder = new TextDecoder();
       let aiText = "";
       setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+      setTrace([]);
 
       while (true) {
         const { value, done } = await reader.read();
@@ -160,19 +164,39 @@ export default function Home() {
             if (dataStr === "[DONE]") break;
             try {
               const data = JSON.parse(dataStr);
-              if (data.error) {
+
+              if (data.type === 'node_start') {
+                setCurrentNode(data.node);
+                setTrace(prev => [...prev, { type: 'node', node: data.node }]);
+              } else if (data.type === 'token') {
+                aiText += data.content;
+                setMessages(prev => {
+                  const copy = [...prev];
+                  copy[copy.length - 1].content = aiText;
+                  return copy;
+                });
+              } else if (data.type === 'tool_start') {
+                setTrace(prev => [...prev, { type: 'tool_start', tool: data.tool, content: JSON.stringify(data.inputs) }]);
+              } else if (data.type === 'tool_end') {
+                setTrace(prev => [...prev, { type: 'tool_end', tool: data.tool, content: JSON.stringify(data.output) }]);
+              } else if (data.error) {
                 aiText += `\n\n> ⚠️ Error: ${data.error}\n\n`;
+                setMessages(prev => {
+                  const copy = [...prev];
+                  copy[copy.length - 1].content = aiText;
+                  return copy;
+                });
               } else if (data.choices && data.choices[0].delta.content) {
+                // OpenAI Fallback
                 aiText += data.choices[0].delta.content;
+                setMessages(prev => {
+                  const copy = [...prev];
+                  copy[copy.length - 1].content = aiText;
+                  return copy;
+                });
               }
-              // Update last message
-              setMessages(prev => {
-                const copy = [...prev];
-                copy[copy.length - 1].content = aiText;
-                return copy;
-              });
             } catch (e) {
-              // ignore partial JSON from chunks if any
+              // ignore partial JSON from chunks
             }
           }
         }
@@ -279,6 +303,26 @@ export default function Home() {
           </div>
         </header>
 
+        {/* Graph Node Progress Bar */}
+        {isLoading && (
+          <div className="bg-[#1a1d24]/80 border-b border-white/5 px-6 py-2 flex items-center gap-4 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
+              <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-400">Orchestrator Node</span>
+            </div>
+            <div className="flex gap-1 overflow-x-auto custom-scrollbar no-scrollbar">
+              {['llm_reasoning', 'tool_execution', 'processing'].map((n) => (
+                <div key={n} className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${currentNode === n ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'text-white/20 border-white/5'}`}>
+                  {n.replace('_', ' ')}
+                </div>
+              ))}
+            </div>
+            <div className="ml-auto text-[10px] text-white/30 font-medium">
+              Real-time Trace active
+            </div>
+          </div>
+        )}
+
         {/* Chat History */}
         <div className="flex-1 overflow-y-auto p-6 md:p-12 pb-32 space-y-8 custom-scrollbar scroll-smooth">
           {messages.length === 0 ? (
@@ -297,7 +341,7 @@ export default function Home() {
             </div>
           ) : (
             messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} group animate-in slide-in-from-bottom-2 fade-in duration-300`}>
+              <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} gap-2 group animate-in slide-in-from-bottom-2 fade-in duration-300`}>
                 <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-6 py-4 relative shadow-xl ${m.role === 'user'
                   ? 'bg-indigo-600 text-white rounded-tr-sm border border-indigo-500 font-medium'
                   : 'bg-[#1a1d24] text-white/90 rounded-tl-sm border border-white/5'
@@ -316,7 +360,21 @@ export default function Home() {
                       )}
                     </div>
                   ) : (
-                    <MarkdownRenderer content={m.content as string} />
+                    <>
+                      <MarkdownRenderer content={m.content as string} />
+                      {/* Show Trace for the last assistant message while loading */}
+                      {i === messages.length - 1 && isLoading && trace.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-white/5 space-y-2">
+                          {trace.map((t, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-[10px] font-mono text-white/40">
+                              {t.type === 'node' && <span className="text-indigo-400">→ entering {t.node}</span>}
+                              {t.type === 'tool_start' && <span className="text-amber-400">⚒ executing {t.tool}</span>}
+                              {t.type === 'tool_end' && <span className="text-emerald-400">✓ {t.tool} completed</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

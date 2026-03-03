@@ -45,19 +45,44 @@ services:
         NEXT_PUBLIC_API_URL: "http://localhost:8001"
     ports:
       - "3000:3000"
-      - "8001:8001"
+      - "8002:8001" # Shift internal API port if needed, but orchestrator is main entry
     environment:
       - LLM_BASE_URL=http://emulator:8000/api/v1
+      - ORCHESTRATOR_URL=http://orchestrator:8001
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
     depends_on:
       emulator:
         condition: service_healthy
-    healthcheck:
-      test: [ "CMD", "curl", "-sf", "http://localhost:8001/" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      orchestrator:
+        condition: service_started
+
+  # ── LangGraph Orchestrator ─────────────────────────────────────
+  orchestrator:
+    build:
+      context: ../orchestrator
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - LLM_BASE_URL=http://emulator:8000/api/v1
+      - MCP_SERVER_URL=http://mcp-server:8080/sse
+    depends_on:
+      emulator:
+        condition: service_healthy
+      mcp-server:
+        condition: service_started
+
+  # ── MCP Server (Tool Layer) ────────────────────────────────────
+  mcp-server:
+    build:
+      context: ../mcp_server
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../mcp_server/skills:/app/skills
+    environment:
+      - SKILLS_DIR=/app/skills
 
 volumes:
   emulator-model-cache:
